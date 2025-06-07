@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Space Shooter Game</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@500&display=swap');
+
+  :root {
+    --bg-color: #0b0c10;
+    --player-color: #66fcf1;
+    --enemy-color: #ff3c38;
+    --bullet-color: #45a29e;
+    --text-color: #c5c6c7;
+    --shadow-color: rgba(102, 252, 241, 0.5);
+    --font-family: 'Orbitron', monospace, Arial, sans-serif;
+    --transition-speed: 0.3s;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  body, html {
+    margin: 0; padding: 0;
+    height: 100%;
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    font-family: var(--font-family);
+    overflow: hidden;
+    user-select: none;
+  }
+
+  #game-container {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  #score {
+    position: absolute;
+    top: 1rem;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--player-color);
+    text-shadow: 0 0 5px var(--player-color);
+    z-index: 20;
+  }
+
+  #game-over {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: var(--enemy-color);
+    font-size: 3rem;
+    font-weight: 900;
+    letter-spacing: 2px;
+    text-shadow: 0 0 20px var(--enemy-color);
+    display: none;
+    z-index: 30;
+    user-select: none;
+  }
+
+  #player {
+    position: absolute;
+    bottom: 20px;
+    left: 50%;
+    width: 50px;
+    height: 50px;
+    background: transparent;
+    transform: translateX(-50%);
+    z-index: 10;
+    filter: drop-shadow(0 0 10px var(--player-color));
+  }
+
+  #player svg {
+    width: 100%;
+    height: 100%;
+    fill: var(--player-color);
+    transition: transform var(--transition-speed) ease;
+  }
+
+  .bullet {
+    position: absolute;
+    width: 6px;
+    height: 16px;
+    background: var(--bullet-color);
+    border-radius: 6px;
+    filter: drop-shadow(0 0 5px var(--bullet-color));
+    z-index: 15;
+  }
+
+  .enemy {
+    position: absolute;
+    width: 40px;
+    height: 40px;
+    background: var(--enemy-color);
+    border-radius: 50% 50% 0 50% / 50% 50% 0 50%;
+    filter: drop-shadow(0 0 8px var(--enemy-color));
+    animation-timing-function: linear;
+    z-index: 10;
+    transform-origin: center bottom;
+    will-change: transform;
+  }
+
+  /* Enemy flicker animation */
+  @keyframes flicker {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+  }
+
+  /* Smooth bullet shooting animation scaling */
+  @keyframes bullet-flicker {
+    0% { transform: scaleY(1); }
+    50% { transform: scaleY(1.2); background: #7ee8fa; }
+    100% { transform: scaleY(1); }
+  }
+
+  /* Controls UI for mobile */
+  #controls {
+    position: absolute;
+    bottom: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 300px;
+    max-width: 90vw;
+    display: flex;
+    justify-content: space-between;
+    z-index: 40;
+    user-select: none;
+  }
+
+  .btn {
+    width: 60px;
+    height: 60px;
+    background: #1f2833;
+    border-radius: 50%;
+    box-shadow: 0 0 10px #45a29e;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-color);
+    font-size: 2rem;
+    font-weight: 900;
+    cursor: pointer;
+    transition: background var(--transition-speed);
+    user-select: none;
+  }
+
+  .btn:active, .btn:hover {
+    background: #45a29e;
+    color: var(--bg-color);
+    box-shadow: 0 0 20px #45a29e;
+  }
+
+  @media (min-width: 600px) {
+    #controls {
+      display: none;
+    }
+  }
+
+</style>
+</head>
+<body>
+<div id="game-container" aria-label="Space shooting game" role="application">
+  <div id="score" aria-live="polite">Score: 0</div>
+  <div id="game-over" role="alert" aria-hidden="true">GAME OVER<br/>Press R to Restart</div>
+  <div id="player" aria-label="Player spaceship" role="img" aria-live="off" tabindex="0">
+    <!-- SVG spaceship -->
+    <svg viewBox="0 0 64 64" aria-hidden="true" focusable="false">
+      <polygon points="32 2 42 22 57 22 44 34 50 62 32 50 14 62 20 34 7 22 22 22" />
+    </svg>
+  </div>
+  <div id="bullets-container"></div>
+  <div id="enemies-container"></div>
+
+  <!-- Mobile controls -->
+  <div id="controls" aria-label="Game controls">
+    <button class="btn" id="left-btn" aria-label="Move left">&#8592;</button>
+    <button class="btn" id="shoot-btn" aria-label="Shoot">&#10003;</button>
+    <button class="btn" id="right-btn" aria-label="Move right">&#8594;</button>
+  </div>
+</div>
+
+<script>
+(() => {
+  const gameContainer = document.getElementById('game-container');
+  const player = document.getElementById('player');
+  const bulletsContainer = document.getElementById('bullets-container');
+  const enemiesContainer = document.getElementById('enemies-container');
+  const scoreDisplay = document.getElementById('score');
+  const gameOverDisplay = document.getElementById('game-over');
+  const controls = {
+    left: document.getElementById('left-btn'),
+    right: document.getElementById('right-btn'),
+    shoot: document.getElementById('shoot-btn'),
+  };
+
+  const playerWidth = 50;
+  const playerHeight = 50;
+  const gameWidth = window.innerWidth;
+  const gameHeight = window.innerHeight;
+
+  let playerX = (gameWidth / 2) - playerWidth / 2;
+  let playerY = gameHeight - playerHeight - 20;
+
+  const moveSpeed = 7;
+  const bulletSpeed = 12;
+  const enemySpeedMin = 2;
+  const enemySpeedMax = 5;
+  const enemySpawnInterval = 1200; // ms
+
+  let bullets = [];
+  let enemies = [];
+  let keysPressed = {};
+
+  let score = 0;
+  let gameRunning = true;
+
+  // Initialize player position
+  function updatePlayerPosition() {
+    player.style.left = playerX + 'px';
+    player.style.bottom = '20px';
+  }
+
+  // Bullet object constructor
+  function Bullet(x, y) {
+    this.x = x;
+    this.y = y;
+    this.element = document.createElement('div');
+    this.element.className = 'bullet';
+    bulletsContainer.appendChild(this.element);
+    this.update = () => {
+      this.y -= bulletSpeed;
+      if (this.y < -20) {
+        this.remove();
+      }
+      this.element.style.left = this.x + 'px';
+      this.element.style.top = this.y + 'px';
+    };
+    this.remove = () => {
+      bulletsContainer.removeChild(this.element);
+      bullets = bullets.filter(b => b !== this);
+    };
+  }
+
+  // Enemy object constructor
+  function Enemy(x, speed) {
+    this.x = x;
+    this.y = -40;
+    this.speed = speed;
+    this.element = document.createElement('div');
+    this.element.className = 'enemy';
+    enemiesContainer.appendChild(this.element);
+    this.update = () => {
+      this.y += this.speed;
+      this.element.style.left = this.x + 'px';
+      this.element.style.top = this.y + 'px';
+      this.element.style.animation = `flicker 1s infinite alternate`;
+      if (this.y > gameHeight + 40) {
+        this.remove();
+      }
+    };
+    this.remove = () => {
+      enemiesContainer.removeChild(this.element);
+      enemies = enemies.filter(e => e !== this);
+    };
+  }
+
+  // Collision detection between rectangles
+  function isColliding(aX, aY, aW, aH, bX, bY, bW, bH) {
+    return (
+      aX < bX + bW &&
+      aX + aW > bX &&
+      aY < bY + bH &&
+      aY + aH > bY
+    );
+  }
+
+  // Handle keyboard controls
+  window.addEventListener('keydown', e => {
+    if (!gameRunning && e.key.toLowerCase() === 'r') {
+      restartGame();
+      return;
+    }
+    if (e.repeat) return;
+    if (e.key === 'ArrowLeft' || e.key === 'a') {
+      keysPressed.left = true;
+    }
+    if (e.key === 'ArrowRight' || e.key === 'd') {
+      keysPressed.right = true;
+    }
+    if (e.key === ' ' || e.key === 'ArrowUp' || e.key === 'w') {
+      keysPressed.shoot = true;
+    }
+  });
+
+  window.addEventListener('keyup', e => {
+    if (e.key === 'ArrowLeft' || e.key === 'a') {
+      keysPressed.left = false;
+    }
+    if (e.key === 'ArrowRight' || e.key === 'd') {
+      keysPressed.right = false;
+    }
+    if (e.key === ' ' || e.key === 'ArrowUp' || e.key === 'w') {
+      keysPressed.shoot = false;
+    }
+  });
+
+  // Touch controls for mobile
+  controls.left.addEventListener('touchstart', e => {
+    e.preventDefault();
+    keysPressed.left = true;
+  });
+  controls.left.addEventListener('touchend', e => {
+    e.preventDefault();
+    keysPressed.left = false;
+  });
+
+  controls.right.addEventListener('touchstart', e => {
+    e.preventDefault();
+    keysPressed.right = true;
+  });
+  controls.right.addEventListener('touchend', e => {
+    e.preventDefault();
+    keysPressed.right = false;
+  });
+
+  controls.shoot.addEventListener('touchstart', e => {
+    e.preventDefault();
+    shootBullet();
+  });
+
+  // Shoot bullet function
+  let lastShotTime = 0;
+  const shotCooldown = 300;
+
+  function shootBullet() {
+    const now = performance.now();
+    if (now - lastShotTime < shotCooldown || !gameRunning) return;
+    lastShotTime = now;
+    const bulletX = playerX + playerWidth / 2 - 3; // bullet width half
+    const bulletY = playerY;
+    const bullet = new Bullet(bulletX, bulletY);
+    bullet.element.style.animation = 'bullet-flicker 0.4s ease';
+    bullets.push(bullet);
+  }
+
+  // Spawn enemies on interval
+  function spawnEnemy() {
+    if (!gameRunning) return;
+    const x = Math.random() * (gameWidth - 40);
+    const speed = enemySpeedMin + Math.random() * (enemySpeedMax - enemySpeedMin);
+    const enemy = new Enemy(x, speed);
+    enemies.push(enemy);
+  }
+
+  // Update game state
+  function update() {
+    if (!gameRunning) return;
+
+    // Move player left/right
+    if (keysPressed.left) {
+      playerX = Math.max(0, playerX - moveSpeed);
+      player.style.transform = 'translateX(0) rotate(-10deg)';
+    } else if (keysPressed.right) {
+      playerX = Math.min(gameWidth - playerWidth, playerX + moveSpeed);
+      player.style.transform = 'translateX(0) rotate(10deg)';
+    } else {
+      player.style.transform = 'translateX(0) rotate(0deg)';
+    }
+
+    updatePlayerPosition();
+
+    if (keysPressed.shoot) {
+      shootBullet();
+    }
+
+    // Update bullets position
+    bullets.forEach(bullet => bullet.update());
+
+    // Update enemies position
+    enemies.forEach(enemy => enemy.update());
+
+    // Check bullet-enemy collision
+    bullets.forEach(bullet => {
+      enemies.forEach(enemy => {
+        if (isColliding(
+          bullet.x, bullet.y, 6, 16,
+          enemy.x, enemy.y, 40, 40
+        )) {
+          enemy.remove();
+          bullet.remove();
+          score += 10;
+          scoreDisplay.textContent = 'Score: ' + score;
+          // Small scale animation on score
+          scoreDisplay.style.transform = 'scale(1.2)';
+          setTimeout(() => {
+            scoreDisplay.style.transform = 'scale(1)';
+          }, 150);
+        }
+      });
+    });
+
+    // Check enemy-player collision
+    enemies.forEach(enemy => {
+      if (isColliding(
+        enemy.x, enemy.y, 40, 40,
+        playerX, playerY, playerWidth, playerHeight
+      )) {
+        endGame();
+      }
+    });
+
+    requestAnimationFrame(update);
+  }
+
+  // End game function
+  function endGame() {
+    gameRunning = false;
+    gameOverDisplay.style.display = 'block';
+    gameOverDisplay.setAttribute('aria-hidden', 'false');
+  }
+
+  // Restart game function
+  function restartGame() {
+    score = 0;
+    scoreDisplay.textContent = 'Score: 0';
+    gameOverDisplay.style.display = 'none';
+    gameOverDisplay.setAttribute('aria-hidden', 'true');
+    bullets.forEach(b => b.remove());
+    enemies.forEach(e => e.remove());
+    bullets = [];
+    enemies = [];
+    playerX = (gameWidth / 2) - playerWidth / 2;
+    updatePlayerPosition();
+    gameRunning = true;
+    lastShotTime = 0;
+  }
+
+  // Start enemy spawning interval
+  setInterval(() => {
+    if (gameRunning) spawnEnemy();
+  }, enemySpawnInterval);
+
+  // Start game
+  updatePlayerPosition();
+  update();
+
+  // For accessibility, focus player initially and give instructions in console
+  player.focus();
+  console.log("Space Shooter Game - Use arrow keys or A/D to move, space to shoot. Press 'R' to restart when game over.");
+
+})();
+</script>
+</body>
+</html>
+
